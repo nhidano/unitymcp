@@ -26,6 +26,7 @@ namespace UnityMCP.Editor.Core
         private Thread clientThread;
         private readonly byte[] buffer = new byte[8192];
         private string incompleteData = "";
+        private const int MaxBufferSize = 1_048_576; // 1MB limit for incomplete data buffer
         private readonly string clientId;
         private DateTime connectedSince;
 
@@ -730,6 +731,13 @@ namespace UnityMCP.Editor.Core
             catch (JsonReaderException)
             {
                 // If JSON is incomplete, store it for the next receive
+                if (fullData.Length > MaxBufferSize)
+                {
+                    Debug.LogWarning($"[McpServer] Incomplete data buffer exceeded {MaxBufferSize} bytes ({fullData.Length} bytes). Resetting buffer.");
+                    this.incompleteData = "";
+                    return;
+                }
+
                 this.incompleteData = fullData;
 
                 if (DetailedLogs)

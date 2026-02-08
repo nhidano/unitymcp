@@ -27,6 +27,9 @@ export class UnityConnection extends EventEmitter {
     // Heartbeat intervals for each client (ping/pong)
     private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
 
+    // Buffer size limit (1MB) for incomplete data
+    private static readonly MAX_BUFFER_SIZE = 1_048_576;
+
     // UDP broadcast related fields
     private broadcastSocket: dgram.Socket | null = null;
     private broadcastPort = 27183; // UDP broadcast port
@@ -270,6 +273,14 @@ export class UnityConnection extends EventEmitter {
 
         // Add received data to buffer
         buffer += data.toString('utf8');
+
+        // Check buffer size limit before processing
+        if (buffer.length > UnityConnection.MAX_BUFFER_SIZE) {
+            console.error(`[WARNING] Data buffer for client ${clientId} exceeded ${UnityConnection.MAX_BUFFER_SIZE} bytes (${buffer.length} bytes). Resetting buffer.`);
+            this.clientDataBuffers.set(clientId, '');
+            return;
+        }
+
         this.clientDataBuffers.set(clientId, buffer);
 
         // Process complete messages by newline delimiter
