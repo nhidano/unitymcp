@@ -59,6 +59,14 @@ namespace UnityMCP.Editor.Settings
         public int udpDiscoveryPort = 27183;
 
         /// <summary>
+        /// Gets or sets the target MCP server ID for multi-instance filtering.
+        /// When set, only UDP broadcasts from the matching server will be accepted.
+        /// Leave empty to accept broadcasts from any server.
+        /// </summary>
+        [SerializeField]
+        public string targetServerId = string.Empty;
+
+        /// <summary>
         /// Gets or sets the dictionary of command handlers and their enabled states.
         /// </summary>
         [SerializeField]

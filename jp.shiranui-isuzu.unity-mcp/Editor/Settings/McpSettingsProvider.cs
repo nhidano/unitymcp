@@ -122,6 +122,12 @@ namespace UnityMCP.Editor.Settings
 
             EditorGUILayout.HelpBox("UDP Discovery allows the MCP server to automatically find Unity when it starts. Disable this if you experience connection issues.", MessageType.Info);
 
+            EditorGUILayout.Space(5);
+
+            // Target Server ID for multi-instance filtering
+            settings.targetServerId = EditorGUILayout.TextField("Target Server ID", settings.targetServerId);
+            EditorGUILayout.HelpBox("When running multiple MCP server instances, set this to the Server ID (MCP_SERVER_ID) of the specific server this Unity editor should connect to. Leave empty to accept connections from any server.", MessageType.Info);
+
             EditorGUILayout.Space(10);
 
             // Auto-start options
