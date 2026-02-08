@@ -36,6 +36,9 @@ namespace UnityMCP.Editor.Core
         private readonly Dictionary<string, ResourceHandlerRegistration> resourceHandlers = new();
         private readonly Dictionary<string, IMcpResourceHandler> resourceUriMap = new();
 
+        // Lock for thread-safe access to TcpClient
+        private readonly object clientLock = new();
+
         // Queue for main thread execution
         private readonly Queue<Action> mainThreadQueue = new();
         private readonly object queueLock = new();
@@ -187,10 +190,13 @@ namespace UnityMCP.Editor.Core
 
             this.cancellationTokenSource?.Cancel();
 
-            if (this.client != null)
+            lock (this.clientLock)
             {
-                this.client.Close();
-                this.client = null;
+                if (this.client != null)
+                {
+                    this.client.Close();
+                    this.client = null;
+                }
             }
 
             if (this.clientThread is { IsAlive: true })
@@ -423,8 +429,11 @@ namespace UnityMCP.Editor.Core
             }
             finally
             {
-                this.client?.Close();
-                this.client = null;
+                lock (this.clientLock)
+                {
+                    this.client?.Close();
+                    this.client = null;
+                }
             }
         }
 
@@ -448,60 +457,85 @@ namespace UnityMCP.Editor.Core
 
             try
             {
-                // Close any existing connection
-                if (this.client != null)
+                lock (this.clientLock)
                 {
-                    this.client.Close();
-                    this.client = null;
-                }
-
-                // Create new client
-                this.client = new TcpClient();
-                this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-
-                // Try to connect with timeout
-                var result = this.client.BeginConnect(this.host, this.port, null, null);
-                var success = result.AsyncWaitHandle.WaitOne(5000); // 5 second timeout
-
-                if (success && this.client.Connected)
-                {
-                    // Connected successfully
-                    this.client.EndConnect(result);
-
-                    // Reset reconnect delay after successful connection
-                    this.currentReconnectDelay = this.reconnectDelay;
-                    this.isReconnecting = false;
-                    this.connectedSince = DateTime.Now;
-
-                    Debug.Log($"Connected to MCP TypeScript server at {this.host}:{this.port}");
-
-                    // Send client registration
-                    this.SendClientRegistration();
-
-                    // Raise connected event on main thread
-                    this.ExecuteOnMainThread(() => this.OnConnected(EventArgs.Empty));
-                }
-                else
-                {
-                    // Connection failed
-                    this.client.Close();
-                    this.client = null;
-
-                    if (!this.isReconnecting)
+                    // Close any existing connection
+                    if (this.client != null)
                     {
-                        Debug.LogWarning($"Failed to connect to MCP TypeScript server at {this.host}:{this.port}. Will retry...");
-                        this.isReconnecting = true;
+                        this.client.Close();
+                        this.client = null;
                     }
 
-                    // Increase reconnect delay with exponential backoff (capped)
-                    this.currentReconnectDelay = Math.Min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
+                    // Create new client
+                    this.client = new TcpClient();
+                    this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                }
+
+                // Connect outside the lock to avoid blocking other threads during the wait
+                TcpClient localClient;
+                lock (this.clientLock)
+                {
+                    localClient = this.client;
+                }
+
+                if (localClient == null) return;
+
+                // Try to connect with timeout
+                var result = localClient.BeginConnect(this.host, this.port, null, null);
+                var success = result.AsyncWaitHandle.WaitOne(5000); // 5 second timeout
+
+                lock (this.clientLock)
+                {
+                    // Re-check that client hasn't been replaced/closed by another thread
+                    if (this.client != localClient)
+                    {
+                        localClient.Close();
+                        return;
+                    }
+
+                    if (success && this.client.Connected)
+                    {
+                        // Connected successfully
+                        this.client.EndConnect(result);
+
+                        // Reset reconnect delay after successful connection
+                        this.currentReconnectDelay = this.reconnectDelay;
+                        this.isReconnecting = false;
+                        this.connectedSince = DateTime.Now;
+
+                        Debug.Log($"Connected to MCP TypeScript server at {this.host}:{this.port}");
+
+                        // Send client registration
+                        this.SendClientRegistration();
+
+                        // Raise connected event on main thread
+                        this.ExecuteOnMainThread(() => this.OnConnected(EventArgs.Empty));
+                    }
+                    else
+                    {
+                        // Connection failed
+                        this.client.Close();
+                        this.client = null;
+
+                        if (!this.isReconnecting)
+                        {
+                            Debug.LogWarning($"Failed to connect to MCP TypeScript server at {this.host}:{this.port}. Will retry...");
+                            this.isReconnecting = true;
+                        }
+
+                        // Increase reconnect delay with exponential backoff (capped)
+                        this.currentReconnectDelay = Math.Min(this.currentReconnectDelay * 2, this.maxReconnectDelay);
+                    }
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError($"Error connecting to MCP TypeScript server: {e.Message}");
-                this.client?.Close();
-                this.client = null;
+                lock (this.clientLock)
+                {
+                    this.client?.Close();
+                    this.client = null;
+                }
                 this.isReconnecting = true;
             }
             finally
@@ -555,8 +589,14 @@ namespace UnityMCP.Editor.Core
         {
             try
             {
+                NetworkStream stream;
+                lock (this.clientLock)
+                {
+                    if (this.client == null) return;
+                    stream = this.client.GetStream();
+                }
+
                 // Check if there's data available
-                var stream = this.client.GetStream();
                 if (!stream.DataAvailable) return;
 
                 // Read available data
@@ -565,8 +605,11 @@ namespace UnityMCP.Editor.Core
                 {
                     // Remote side has gracefully closed the connection
                     Debug.Log("[McpServer] Remote host closed the connection (bytesRead == 0)");
-                    this.client?.Close();
-                    this.client = null;
+                    lock (this.clientLock)
+                    {
+                        this.client?.Close();
+                        this.client = null;
+                    }
                     this.ExecuteOnMainThread(() => this.OnDisconnected(EventArgs.Empty));
                     return;
                 }
@@ -579,8 +622,11 @@ namespace UnityMCP.Editor.Core
                 Debug.LogError($"Error processing incoming data: {e.Message}");
 
                 // Close connection on error
-                this.client?.Close();
-                this.client = null;
+                lock (this.clientLock)
+                {
+                    this.client?.Close();
+                    this.client = null;
+                }
 
                 // Notify disconnection on main thread
                 this.ExecuteOnMainThread(() => this.OnDisconnected(EventArgs.Empty));
@@ -623,16 +669,19 @@ namespace UnityMCP.Editor.Core
                 }
 
                 // Send response
-                if (!this.IsConnected) return;
-
-                var responseJson = JsonConvert.SerializeObject(response);
-                var responseBytes = Encoding.UTF8.GetBytes(responseJson + "\n");
-                var stream = this.client.GetStream();
-                stream.Write(responseBytes, 0, responseBytes.Length);
-
-                if (DetailedLogs)
+                lock (this.clientLock)
                 {
-                    Debug.Log($"[McpClient] Sent response: {responseJson}");
+                    if (!this.IsConnected) return;
+
+                    var responseJson = JsonConvert.SerializeObject(response);
+                    var responseBytes = Encoding.UTF8.GetBytes(responseJson + "\n");
+                    var stream = this.client.GetStream();
+                    stream.Write(responseBytes, 0, responseBytes.Length);
+
+                    if (DetailedLogs)
+                    {
+                        Debug.Log($"[McpClient] Sent response: {responseJson}");
+                    }
                 }
             }
             catch (JsonReaderException)
@@ -650,22 +699,25 @@ namespace UnityMCP.Editor.Core
                 Debug.LogError($"Error processing command: {e.Message}");
 
                 // Send error response
-                if (this.IsConnected)
+                lock (this.clientLock)
                 {
-                    var errorResponse = new JObject
+                    if (this.IsConnected)
                     {
-                        ["status"] = "error",
-                        ["message"] = e.Message
-                    };
+                        var errorResponse = new JObject
+                        {
+                            ["status"] = "error",
+                            ["message"] = e.Message
+                        };
 
-                    var errorJson = JsonConvert.SerializeObject(errorResponse);
-                    var errorBytes = Encoding.UTF8.GetBytes(errorJson + "\n");
-                    var stream = this.client.GetStream();
-                    stream.Write(errorBytes, 0, errorBytes.Length);
+                        var errorJson = JsonConvert.SerializeObject(errorResponse);
+                        var errorBytes = Encoding.UTF8.GetBytes(errorJson + "\n");
+                        var stream = this.client.GetStream();
+                        stream.Write(errorBytes, 0, errorBytes.Length);
 
-                    if (DetailedLogs)
-                    {
-                        Debug.Log($"[McpClient] Sent error response: {errorJson}");
+                        if (DetailedLogs)
+                        {
+                            Debug.Log($"[McpClient] Sent error response: {errorJson}");
+                        }
                     }
                 }
 

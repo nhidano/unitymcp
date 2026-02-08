@@ -93,3 +93,15 @@ Done. Here's a summary of what T-08 implemented:
 
 === END T-08 socket.on('close')でpendingRequests reject (exit: 0, 2026-02-08 20:22:16) ===
 === START T-09 ソケット書き込み前のwritable検証追加 (2026-02-08 20:22:16) ===
+Done. Here's a summary of what was done for **T-09**:
+
+**Change:** `unity-mcp-ts/src/core/UnityConnection.ts:471-482`
+
+- Removed the `!` non-null assertion on `this.clients.get(this.activeClientId)`
+- Added a writable validation check before `socket.write()`: checks for `!socket || socket.destroyed || !socket.writable`
+- When the socket is not writable, the pending request is cleaned up from `pendingRequests`, and the promise is rejected with a `ConnectionError` code — preventing writes to dead/closed sockets
+
+Note: I was unable to locate a `UnityTestRunner` script in the repository, and the `npm test`/`npm run build` commands required approval that wasn't granted. The change is straightforward and follows the existing error handling patterns in the codebase.
+
+=== END T-09 ソケット書き込み前のwritable検証追加 (exit: 0, 2026-02-08 20:24:29) ===
+=== START T-10 TryConnect()にlock機構追加 (2026-02-08 20:24:29) ===
