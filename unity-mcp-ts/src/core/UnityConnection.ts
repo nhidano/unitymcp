@@ -24,6 +24,9 @@ export class UnityConnection extends EventEmitter {
     // Server identification for multi-instance support
     private serverId: string = '';
 
+    // Heartbeat intervals for each client (ping/pong)
+    private heartbeatIntervals: Map<string, NodeJS.Timeout> = new Map();
+
     // UDP broadcast related fields
     private broadcastSocket: dgram.Socket | null = null;
     private broadcastPort = 27183; // UDP broadcast port
@@ -127,6 +130,7 @@ export class UnityConnection extends EventEmitter {
                         }
 
                         console.error(`[INFO] Unity client disconnected: ${actualClientId}`);
+                        this.stopHeartbeat(actualClientId);
                         this.clients.delete(actualClientId);
                         this.clientDataBuffers.delete(actualClientId);
                         this.clientInfoMap.delete(actualClientId);
@@ -311,6 +315,12 @@ export class UnityConnection extends EventEmitter {
             console.error(`[DEBUG] Processing message from ${clientId}: ${message}`);
             const response = JSON.parse(message) as JObject;
 
+            // Handle pong response (heartbeat)
+            if (response.type === "pong") {
+                // Heartbeat pong received, connection is alive
+                return;
+            }
+
             // Handle registration message
             if (response.type === "registration") {
                 this.handleRegistration(clientId, response);
@@ -383,8 +393,68 @@ export class UnityConnection extends EventEmitter {
             this.activeClientId = newClientId;
         }
 
+        // Start heartbeat for this client
+        this.stopHeartbeat(clientId); // Stop any heartbeat under old ID
+        this.startHeartbeat(newClientId);
+
         // Emit registration event
         this.emit('clientRegistered', { clientId: newClientId, info: clientInfo });
+    }
+
+    /**
+     * Starts heartbeat ping for a specific client.
+     * Sends a ping every 30 seconds to detect dead connections.
+     * @param clientId The client ID to monitor
+     */
+    private startHeartbeat(clientId: string): void {
+        // Clear any existing heartbeat for this client
+        this.stopHeartbeat(clientId);
+
+        const interval = setInterval(() => {
+            const socket = this.clients.get(clientId);
+            if (!socket || socket.destroyed || !socket.writable) {
+                this.stopHeartbeat(clientId);
+                return;
+            }
+
+            try {
+                const ping = JSON.stringify({ type: 'ping', timestamp: Date.now() }) + '\n';
+                socket.write(ping, (err) => {
+                    if (err) {
+                        console.error(`[ERROR] Failed to send heartbeat ping to ${clientId}: ${err.message}`);
+                        this.stopHeartbeat(clientId);
+                    }
+                });
+            } catch (err) {
+                console.error(`[ERROR] Heartbeat ping error for ${clientId}: ${err instanceof Error ? err.message : String(err)}`);
+                this.stopHeartbeat(clientId);
+            }
+        }, 30000); // 30 seconds
+
+        this.heartbeatIntervals.set(clientId, interval);
+        console.error(`[INFO] Started heartbeat for client: ${clientId}`);
+    }
+
+    /**
+     * Stops heartbeat ping for a specific client.
+     * @param clientId The client ID to stop monitoring
+     */
+    private stopHeartbeat(clientId: string): void {
+        const interval = this.heartbeatIntervals.get(clientId);
+        if (interval) {
+            clearInterval(interval);
+            this.heartbeatIntervals.delete(clientId);
+        }
+    }
+
+    /**
+     * Stops all heartbeat intervals.
+     */
+    private stopAllHeartbeats(): void {
+        for (const [clientId, interval] of this.heartbeatIntervals) {
+            clearInterval(interval);
+        }
+        this.heartbeatIntervals.clear();
     }
 
     /**
@@ -403,6 +473,9 @@ export class UnityConnection extends EventEmitter {
      * Clears all connected Unity clients.
      */
     public clearClients(): void {
+        // Stop all heartbeats
+        this.stopAllHeartbeats();
+
         // Destroy all client sockets before clearing
         for (const [clientId, socket] of this.clients.entries()) {
             console.error(`[INFO] Destroying client socket: ${clientId}`);
@@ -548,6 +621,9 @@ export class UnityConnection extends EventEmitter {
      * Stops the server and closes all connections.
      */
     public stop(): void {
+        // Stop all heartbeats
+        this.stopAllHeartbeats();
+
         // Close all client connections
         for (const [clientId, socket] of this.clients.entries()) {
             console.error(`[INFO] Closing connection to client: ${clientId}`);

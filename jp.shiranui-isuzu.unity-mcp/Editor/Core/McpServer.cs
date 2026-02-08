@@ -673,6 +673,31 @@ namespace UnityMCP.Editor.Core
 
                 // Process the command based on its type
                 var responseType = command["type"]?.ToString();
+
+                // Handle heartbeat ping - respond with pong immediately (no main thread needed)
+                if (responseType == "ping")
+                {
+                    var pong = new JObject
+                    {
+                        ["type"] = "pong",
+                        ["timestamp"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    };
+
+                    lock (this.clientLock)
+                    {
+                        if (this.IsConnected)
+                        {
+                            var pongJson = JsonConvert.SerializeObject(pong);
+                            var pongBytes = Encoding.UTF8.GetBytes(pongJson + "\n");
+                            var stream = this.client.GetStream();
+                            stream.Write(pongBytes, 0, pongBytes.Length);
+                        }
+                    }
+
+                    this.incompleteData = "";
+                    return;
+                }
+
                 JObject response;
 
                 if (responseType == "resource")

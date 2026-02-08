@@ -194,3 +194,29 @@ OK
 
 === END MI-03 McpSettingsにtargetServerId設定追加+UI (exit: 0, 2026-02-08 20:43:31) ===
 === START MI-04 C# UDP受信でserverIdフィルタリング (2026-02-08 20:43:31) ===
+Done. MI-04 has been committed successfully.
+
+**Summary of changes:**
+
+In `McpServer.cs` `ReceiveCallback()` method (line 342-355), added serverId filtering logic that:
+- Reads `targetServerId` from `McpSettings.instance`
+- If `targetServerId` is non-empty, extracts the `serverId` field from the incoming UDP broadcast JSON
+- If they don't match, logs a message (when `DetailedLogs` enabled) and returns early, skipping the broadcast entirely
+- This filtering is placed **before** the `switch` statement, so it applies to both `listClients` and `mcp_server_announce` message types
+- When `targetServerId` is empty (default), all broadcasts are accepted as before — backward compatible
+- This also covers MI-05 (preventing host/port overwrite from non-matching broadcasts) since filtered broadcasts never reach the code that updates `this.host`/`this.port`
+
+=== END MI-04 C# UDP受信でserverIdフィルタリング (exit: 0, 2026-02-08 20:45:52) ===
+=== START MI-05 ブロードキャストによるポート上書き防止 (2026-02-08 20:45:52) ===
+**MI-05 完了** — コード変更は不要です。
+
+MI-04（commit `86423f0`）で実装された `ReceiveCallback()` 内の serverId フィルタリング（`McpServer.cs:342-355`）が、早期 `return` により `switch` 文に到達しないため、`this.host`/`this.port` の上書きが自動的に防止されています。これは実装プラン（sorted-bubbling-rabbit.md）でも MI-04/MI-05 を統合変更として記述されており、MI-04 のコミットで MI-05 も完了しています。
+
+=== END MI-05 ブロードキャストによるポート上書き防止 (exit: 0, 2026-02-08 20:48:23) ===
+=== START MI-07 activeClientId概念の整理(変更不要確認) (2026-02-08 20:48:23) ===
+MI-07 is now marked as DONE. Since this task is a design verification with no code changes, there are no files to commit — the task is complete.
+
+**Phase 4 status:** All tasks (MI-01 through MI-07) are now DONE. Phase 4 (マルチインスタンス - サーバID識別) is complete.
+
+=== END MI-07 activeClientId概念の整理(変更不要確認) (exit: 0, 2026-02-08 20:49:33) ===
+=== START T-14 ハートビート機構追加(ping/pong) (2026-02-08 20:49:33) ===
