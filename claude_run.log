@@ -105,3 +105,21 @@ Note: I was unable to locate a `UnityTestRunner` script in the repository, and t
 
 === END T-09 ソケット書き込み前のwritable検証追加 (exit: 0, 2026-02-08 20:24:29) ===
 === START T-10 TryConnect()にlock機構追加 (2026-02-08 20:24:29) ===
+Done. Here's a summary of what T-10 implemented:
+
+**T-10: `TryConnect()`にlock機構追加**
+
+Added `private readonly object clientLock = new()` and wrapped all `this.client` (TcpClient) access with `lock(clientLock)` to prevent race conditions between threads:
+
+1. **`Stop()`** - client close/null wrapped in lock
+2. **`TryConnect()`** - client creation, connection result handling, and error cleanup all wrapped in lock. The `BeginConnect` wait (5s timeout) runs outside the lock to avoid blocking other threads, using a local reference with a re-check pattern to detect if another thread replaced the client during the wait.
+3. **`ProcessIncomingData()`** - stream acquisition and client close/null on disconnect/error wrapped in lock
+4. **`ProcessData()`** - response writing (both success and error paths) wrapped in lock
+5. **`RunClient()` finally** - client close/null wrapped in lock
+
+=== END T-10 TryConnect()にlock機構追加 (exit: 0, 2026-02-08 20:28:06) ===
+=== START T-11 TcpClient.NoDelay=true設定 (2026-02-08 20:28:06) ===
+T-11 完了。`McpServer.cs` line 472 に `this.client.NoDelay = true;` を追加し、Nagleアルゴリズムを無効化しました。これにより小さなTCPパケット（コマンド/レスポンス）の送信遅延が解消されます。コミット `d766943` として記録済みです。
+
+=== END T-11 TcpClient.NoDelay=true設定 (exit: 0, 2026-02-08 20:29:39) ===
+=== START T-12 ソケットタイムアウト設定(Send/Receive) (2026-02-08 20:29:39) ===

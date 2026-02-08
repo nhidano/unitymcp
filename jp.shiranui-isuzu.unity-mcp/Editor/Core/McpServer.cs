@@ -470,6 +470,8 @@ namespace UnityMCP.Editor.Core
                     this.client = new TcpClient();
                     this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
                     this.client.NoDelay = true;
+                    this.client.SendTimeout = 30000;
+                    this.client.ReceiveTimeout = 30000;
                 }
 
                 // Connect outside the lock to avoid blocking other threads during the wait
