@@ -469,7 +469,17 @@ export class UnityConnection extends EventEmitter {
                 this.pendingRequests.set(id, { resolve, reject, clientId: this.activeClientId as string });
 
                 // Get the active client socket
-                const socket = this.clients.get(this.activeClientId as string)!;
+                const socket = this.clients.get(this.activeClientId as string);
+
+                // Validate socket is writable before attempting to send
+                if (!socket || socket.destroyed || !socket.writable) {
+                    console.error(`[ERROR] Socket not writable for client ${this.activeClientId}`);
+                    this.pendingRequests.delete(id);
+                    const error = new Error(`Socket not writable for client ${this.activeClientId}`);
+                    (error as any).code = McpErrorCode.ConnectionError;
+                    reject(error);
+                    return;
+                }
 
                 // Send the request
                 const data = JSON.stringify(requestWithId) + '\n';
