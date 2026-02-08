@@ -94,6 +94,12 @@ export class UnityConnection extends EventEmitter {
                     // Set up data handling
                     socket.on('data', (data) => this.handleClientData(clientId, data));
 
+                    // Handle half-open connection (remote side sent FIN)
+                    socket.on('end', () => {
+                        console.error(`[INFO] Unity client connection ended (FIN received): ${clientId}`);
+                        socket.destroy();
+                    });
+
                     // Handle disconnection
                     socket.on('close', () => {
                         console.error(`[INFO] Unity client disconnected: ${clientId}`);
