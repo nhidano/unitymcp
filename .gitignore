@@ -1,3 +1,4 @@
 ﻿runtask.ps1
 CLAUDE.md
 tasks.txt
+.claude/settings.local.json

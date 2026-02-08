@@ -220,3 +220,34 @@ MI-07 is now marked as DONE. Since this task is a design verification with no co
 
 === END MI-07 activeClientId概念の整理(変更不要確認) (exit: 0, 2026-02-08 20:49:33) ===
 === START T-14 ハートビート機構追加(ping/pong) (2026-02-08 20:49:33) ===
+OK
+
+**Summary of T-14 changes (3 files, +127 lines):**
+
+**TS side (`UnityConnection.ts`):**
+- Added `heartbeatIntervals: Map<string, NodeJS.Timeout>` for per-client interval tracking
+- `startHeartbeat(clientId)`: Sends `{"type":"ping","timestamp":...}` every 30 seconds; stops on socket error/destroy
+- `stopHeartbeat(clientId)` / `stopAllHeartbeats()`: Clean interval cleanup
+- `processClientMessage()`: Early return on `type === "pong"` (no further processing needed)
+- `handleRegistration()`: Starts heartbeat after client registration
+- `socket.on('close')`: Stops heartbeat for disconnected client
+- `clearClients()` / `stop()`: Calls `stopAllHeartbeats()` before destroying sockets
+
+**C# side (`McpServer.cs`):**
+- `ProcessData()`: Checks `type == "ping"` before command/resource processing; responds immediately with `{"type":"pong","timestamp":...}` on the background thread (no main thread dispatch needed)
+
+=== END T-14 ハートビート機構追加(ping/pong) (exit: 0, 2026-02-08 20:55:32) ===
+=== START T-16 不完全データバッファのサイズ制限 (2026-02-08 20:55:32) ===
+OK
+**Summary of T-16 changes:**
+
+
+- **C# side** (`McpServer.cs`):
+  - Added `MaxBufferSize` constant (1MB = 1,048,576 bytes) 
+
+- **TS side** (`UnityConnection.ts`):
+  - Added `MAX_BUFFER_SIZE` static readonly field (1MB = 1,048,576)
+  - In `handleClientData()`, after appending received data to the buffer, check if `buffer.length > MAX_BUFFER_SIZE`. If exceeded, reset the client's buffer to empty and log a warning, then return without processing.
+  - In `ProcessData()`, when `JsonReaderException` is caught (incomplete JSON), check if `fullData.Length > MaxBufferSize`. If exceeded, reset `incompleteData` to empty and log a warning.
+
+=== END T-16 不完全データバッファのサイズ制限 (exit: 0, 2026-02-08 20:59:52) ===
