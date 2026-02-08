@@ -457,6 +457,7 @@ namespace UnityMCP.Editor.Core
 
                 // Create new client
                 this.client = new TcpClient();
+                this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
 
                 // Try to connect with timeout
                 var result = this.client.BeginConnect(this.host, this.port, null, null);
