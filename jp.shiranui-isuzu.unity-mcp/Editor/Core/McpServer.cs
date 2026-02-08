@@ -772,7 +772,7 @@ namespace UnityMCP.Editor.Core
 
             // Execute the resource fetch in the main thread
             JObject result = null;
-            var waitHandle = new ManualResetEvent(false);
+            using var waitHandle = new ManualResetEvent(false);
 
             // Queue the resource fetch for the main thread
             this.ExecuteOnMainThread(() =>
@@ -881,7 +881,7 @@ namespace UnityMCP.Editor.Core
 
             // Execute the command in the main thread
             JObject result = null;
-            var waitHandle = new ManualResetEvent(false);
+            using var waitHandle = new ManualResetEvent(false);
 
             // Queue the command execution for the main thread
             this.ExecuteOnMainThread(() =>
