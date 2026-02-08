@@ -77,7 +77,7 @@ namespace UnityMCP.Editor.Core
                 {
                     Debug.Log("Restarting MCP server due to play mode change");
                     server.Stop();
-                    server.Start();
+                    EditorApplication.delayCall += () => server.Start();
                 }
             }
         }

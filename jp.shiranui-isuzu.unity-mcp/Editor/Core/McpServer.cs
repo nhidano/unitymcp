@@ -201,7 +201,7 @@ namespace UnityMCP.Editor.Core
 
             if (this.clientThread is { IsAlive: true })
             {
-                this.clientThread.Join(1000); // Wait for the thread to finish
+                this.clientThread.Join(3000); // Wait for the thread to finish
                 this.clientThread = null;
             }
 
