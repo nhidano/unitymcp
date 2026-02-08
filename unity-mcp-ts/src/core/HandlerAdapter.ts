@@ -165,53 +165,62 @@ export class HandlerAdapter {
 
         // Register each tool definition
         for (const [toolName, definition] of toolDefinitions.entries()) {
-            this.server.tool(
+            // Check if parameterSchema has any Zod properties.
+            // An empty {} is not recognized as ZodRawShape by the MCP SDK,
+            // causing overload resolution to misinterpret arguments.
+            const hasParams = Object.keys(definition.parameterSchema).length > 0;
+            const toolArgs: unknown[] = [
                 toolName,
                 definition.description,
-                definition.parameterSchema,
-                definition.annotations || {},
-                async (params) => {
-                    try {
-                        // Extract the action from the tool name (e.g., "menu_execute" -> "execute")
-                        const action = toolName.split('_')[1] || 'execute';
+            ];
+            if (hasParams) {
+                toolArgs.push(definition.parameterSchema);
+            }
+            toolArgs.push(definition.annotations || {});
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const toolCallback = async (params: any) => {
+                try {
+                    // Extract the action from the tool name (e.g., "menu_execute" -> "execute")
+                    const action = toolName.split('_')[1] || 'execute';
 
-                        // Execute the command and await the result
-                        const result = await handler.execute(action, params);
+                    // Execute the command and await the result
+                    const result = await handler.execute(action, params);
 
-                        if (result.success === false && result.error) {
-                            return {
-                                isError: true,
-                                content: [{
-                                    type: "text",
-                                    text: `Error: ${result.error}`
-                                }]
-                            };
-                        }
-
-                        // Convert the result to a text response
-                        return {
-                            content: [{
-                                type: "text",
-                                text: JSON.stringify(result)
-                            }]
-                        };
-                    } catch (error) {
-                        console.error(`[ERROR] Tool execution [${toolName}]: ${error instanceof Error ? error.message : String(error)}`);
+                    if (result.success === false && result.error) {
                         return {
                             isError: true,
                             content: [{
                                 type: "text",
-                                text: `Error: ${error instanceof Error ? error.message : String(error)}`
-                            }],
-                            errorDetails: {
-                                type: "execution_error",
-                                timestamp: new Date().toISOString(),
-                                command: `${toolName}`
-                            }
+                                text: `Error: ${result.error}`
+                            }]
                         };
                     }
+
+                    // Convert the result to a text response
+                    return {
+                        content: [{
+                            type: "text",
+                            text: JSON.stringify(result)
+                        }]
+                    };
+                } catch (error) {
+                    console.error(`[ERROR] Tool execution [${toolName}]: ${error instanceof Error ? error.message : String(error)}`);
+                    return {
+                        isError: true,
+                        content: [{
+                            type: "text",
+                            text: `Error: ${error instanceof Error ? error.message : String(error)}`
+                        }],
+                        errorDetails: {
+                            type: "execution_error",
+                            timestamp: new Date().toISOString(),
+                            command: `${toolName}`
+                        }
+                    };
                 }
-            );
+            };
+            toolArgs.push(toolCallback);
+            (this.server.tool as Function).apply(this.server, toolArgs);
 
             console.error(`[INFO] Registered tool: ${toolName}`);
         }
