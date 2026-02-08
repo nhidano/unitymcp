@@ -168,3 +168,29 @@ Note: I was unable to run `npm run build` or `npm test` due to repeated command 
 
 === END MI-01 TSサーバにserverId追加(環境変数/UUID) (exit: 0, 2026-02-08 20:38:47) ===
 === START MI-02 UDPブロードキャストにserverId含める (2026-02-08 20:38:47) ===
+Done. MI-02 completed:
+
+- **Change**: Added `serverId: this.serverId` to the UDP broadcast payload in `sendInitialBroadcast()` at `unity-mcp-ts/src/core/UnityConnection.ts:216`
+- **Effect**: Both `mcp_server_announce` and `listClients` broadcasts now include the server's unique ID, enabling C# clients (MI-04) to filter broadcasts by `targetServerId`
+- **Commit**: `23eeef3 MI-02 UDPブロードキャストにserverId含める`
+
+Note: I was unable to run `npm run build` or `npm test` due to permission restrictions on npm commands. The change is a single property addition to an object literal and is syntactically safe.
+
+=== END MI-02 UDPブロードキャストにserverId含める (exit: 0, 2026-02-08 20:41:20) ===
+=== START MI-03 McpSettingsにtargetServerId設定追加+UI (2026-02-08 20:41:20) ===
+Commit successful. Here's a summary of what was done:
+
+**MI-03: McpSettingsにtargetServerId設定追加+UI**
+
+**Changes made:**
+
+1. **`McpSettings.cs`** - Added `[SerializeField] public string targetServerId = string.Empty;` field with XML doc comment explaining multi-instance filtering behavior.
+
+2. **`McpSettingsProvider.cs`** - Added a `TextField` labeled "Target Server ID" and an informational `HelpBox` explaining its purpose, placed in the UDP Discovery settings section (after the existing UDP Discovery HelpBox).
+
+The setting allows users to specify which MCP server instance (identified by `MCP_SERVER_ID`) this Unity editor should connect to. When empty (default), it accepts connections from any server, maintaining backward compatibility.
+
+OK
+
+=== END MI-03 McpSettingsにtargetServerId設定追加+UI (exit: 0, 2026-02-08 20:43:31) ===
+=== START MI-04 C# UDP受信でserverIdフィルタリング (2026-02-08 20:43:31) ===

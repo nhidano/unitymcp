@@ -339,6 +339,21 @@ namespace UnityMCP.Editor.Core
                 var serverInfo = JObject.Parse(jsonStr);
                 var messageType = serverInfo["type"]?.ToString();
 
+                // Filter by serverId if targetServerId is configured
+                var targetId = McpSettings.instance.targetServerId;
+                if (!string.IsNullOrEmpty(targetId))
+                {
+                    var broadcastServerId = serverInfo["serverId"]?.ToString();
+                    if (broadcastServerId != targetId)
+                    {
+                        if (DetailedLogs)
+                        {
+                            Debug.Log($"[McpServer] Ignoring UDP broadcast from serverId '{broadcastServerId}' (target: '{targetId}')");
+                        }
+                        return;
+                    }
+                }
+
                 switch (messageType)
                 {
                     case "listClients":
