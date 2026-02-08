@@ -69,3 +69,12 @@ Added `this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOption
 
 === END T-06 TCP KeepAlive設定追加 (exit: 0, 2026-02-08 20:16:36) ===
 === START T-07 socket.on('error')でソケット破棄+マップ削除 (2026-02-08 20:16:36) ===
+Done. T-07 is complete.
+
+**Summary of change** (`unity-mcp-ts/src/core/UnityConnection.ts:127`):
+- Added `socket.destroy()` to the `socket.on('error')` handler
+- When a socket error occurs, `destroy()` is called after logging and emitting the error event
+- This triggers the existing `close` event handler which already handles all map cleanup (`clients`, `clientDataBuffers`, `clientInfoMap`) and active client reassignment — no duplicate cleanup logic needed
+
+=== END T-07 socket.on('error')でソケット破棄+マップ削除 (exit: 0, 2026-02-08 20:18:48) ===
+=== START T-08 socket.on('close')でpendingRequests reject (2026-02-08 20:18:48) ===

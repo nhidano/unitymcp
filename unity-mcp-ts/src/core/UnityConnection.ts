@@ -15,7 +15,7 @@ export class UnityConnection extends EventEmitter {
     private activeClientId: string | null = null;
     private port: number = 27182; // Default port
     private host: string = '127.0.0.1';
-    private pendingRequests: Map<string, { resolve: (value: JObject) => void, reject: (reason: Error) => void }> = new Map();
+    private pendingRequests: Map<string, { resolve: (value: JObject) => void, reject: (reason: Error) => void, clientId: string }> = new Map();
     private requestId: number = 0;
     private clientDataBuffers: Map<string, string> = new Map();
     private clientInfoMap: Map<string, any> = new Map();
@@ -102,13 +102,30 @@ export class UnityConnection extends EventEmitter {
 
                     // Handle disconnection
                     socket.on('close', () => {
-                        console.error(`[INFO] Unity client disconnected: ${clientId}`);
-                        this.clients.delete(clientId);
-                        this.clientDataBuffers.delete(clientId);
-                        this.clientInfoMap.delete(clientId);
+                        // Find the actual clientId for this socket (may have been renamed during registration)
+                        let actualClientId = clientId;
+                        for (const [id, s] of this.clients) {
+                            if (s === socket) {
+                                actualClientId = id;
+                                break;
+                            }
+                        }
+
+                        console.error(`[INFO] Unity client disconnected: ${actualClientId}`);
+                        this.clients.delete(actualClientId);
+                        this.clientDataBuffers.delete(actualClientId);
+                        this.clientInfoMap.delete(actualClientId);
+
+                        // Reject pending requests for this client
+                        for (const [id, pending] of this.pendingRequests) {
+                            if (pending.clientId === actualClientId) {
+                                pending.reject(new Error(`Client disconnected: ${actualClientId}`));
+                                this.pendingRequests.delete(id);
+                            }
+                        }
 
                         // Update active client if this was the active one
-                        if (this.activeClientId === clientId) {
+                        if (this.activeClientId === actualClientId) {
                             this.activeClientId = this.clients.size > 0 ?
                                 [...this.clients.keys()][0] : null;
 
@@ -117,7 +134,7 @@ export class UnityConnection extends EventEmitter {
                             }
                         }
 
-                        this.emit('clientDisconnected', { clientId });
+                        this.emit('clientDisconnected', { clientId: actualClientId });
                     });
 
                     // Handle errors - destroy socket to trigger 'close' event for cleanup
@@ -448,8 +465,8 @@ export class UnityConnection extends EventEmitter {
 
                 console.error(`[DEBUG] Sending request to ${this.activeClientId}: ${JSON.stringify(requestWithId)}`);
 
-                // Store the promise callbacks
-                this.pendingRequests.set(id, { resolve, reject });
+                // Store the promise callbacks with clientId for disconnect cleanup
+                this.pendingRequests.set(id, { resolve, reject, clientId: this.activeClientId as string });
 
                 // Get the active client socket
                 const socket = this.clients.get(this.activeClientId as string)!;
