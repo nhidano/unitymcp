@@ -7,3 +7,22 @@ OK
 
 === END T-01 clearClients() - ソケット適切破棄 (exit: 0, 2026-02-08 20:04:09) ===
 === START T-02 clearClients() - activeClientIdリセット (2026-02-08 20:04:09) ===
+Done. T-02 is complete:
+
+- **Change:** Added `this.activeClientId = null;` in `clearClients()`, placed after socket destruction and before clearing the client maps
+- **Changed file:** `unity-mcp-ts/src/core/UnityConnection.ts` line 373
+- **Commit:** `e012eac` — "T-02 clearClients() - activeClientIdリセット"
+
+=== END T-02 clearClients() - activeClientIdリセット (exit: 0, 2026-02-08 20:05:53) ===
+=== START T-03 clearClients() - pendingRequests全reject (2026-02-08 20:05:53) ===
+Commit successful. Only `claude_run.log` remains as untracked change (not part of this task).
+
+**Summary:**
+- Modified `unity-mcp-ts/src/core/UnityConnection.ts` — added pending request rejection logic to `clearClients()` (6 lines added)
+- Pattern follows `stop()` method: iterates `pendingRequests`, calls `reject(new Error('All clients cleared'))` for each, then calls `this.pendingRequests.clear()`
+- The rejection happens after socket destruction and activeClientId reset (T-01, T-02) but before clearing client maps
+
+OK
+
+=== END T-03 clearClients() - pendingRequests全reject (exit: 0, 2026-02-08 20:08:11) ===
+=== START MI-06 unity_listClients非破壊化 (2026-02-08 20:08:11) ===

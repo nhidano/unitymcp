@@ -10,20 +10,12 @@ export function registerUnityClientTools(server: McpServer): void {
     // Get the Unity connection instance
     const connection = UnityConnection.getInstance();
 
-    // List all connected Unity clients
+    // List all connected Unity clients (non-destructive: returns current connections)
     server.tool(
         "unity_listClients",
         "Lists all connected Unity projects",
         {},
         async () => {
-
-            connection.clearClients();
-
-            connection.sendInitialBroadcast("listClients");
-
-            // Wait for the clients
-            await new Promise(resolve => setTimeout(resolve, 3000));
-
             const clients = connection.getConnectedClients();
 
             // Filter out clients with invalid/unknown information
@@ -45,6 +37,55 @@ export function registerUnityClientTools(server: McpServer): void {
 
             // Focus on project information in the display
             let responseText = "Connected Unity projects:\n\n";
+
+            validClients.forEach((client, index) => {
+                const info = client.info || {};
+                responseText += `${index + 1}. ${client.isActive ? '✓ ' : ''}${info.productName || 'Unknown Project'}\n`;
+                responseText += `   ID: ${client.id}\n`;
+                responseText += `   Unity: ${info.unityVersion || 'Unknown'}\n`;
+                responseText += `   Mode: ${info.isEditor ? 'Editor' : 'Player'}\n`;
+                responseText += `   Project Hash: ${info.projectPathHash || 'Unknown'}\n`;
+                responseText += '\n';
+            });
+
+            return {
+                content: [{
+                    type: "text",
+                    text: responseText
+                }]
+            };
+        }
+    );
+
+    // Refresh client list by sending a broadcast (non-destructive: keeps existing connections)
+    server.tool(
+        "unity_refreshClients",
+        "Send a broadcast to discover Unity projects without disconnecting existing clients",
+        {},
+        async () => {
+            connection.sendInitialBroadcast("listClients");
+
+            // Wait for responses
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            const clients = connection.getConnectedClients();
+
+            const validClients = clients.filter(client => {
+                const info = client.info || {};
+                return info.productName && info.productName !== "Unknown" &&
+                    info.productName !== "UnknownProject";
+            });
+
+            if (validClients.length === 0) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: "No Unity projects found after refresh."
+                    }]
+                };
+            }
+
+            let responseText = `Found ${validClients.length} Unity project(s) after refresh:\n\n`;
 
             validClients.forEach((client, index) => {
                 const info = client.info || {};
