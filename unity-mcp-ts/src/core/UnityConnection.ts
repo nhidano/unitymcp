@@ -1,5 +1,6 @@
 ﻿import * as net from 'net';
 import * as dgram from 'dgram';
+import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { JObject } from '../types/index.js';
 import { McpErrorCode } from "../types/ErrorCodes.js";
@@ -19,6 +20,9 @@ export class UnityConnection extends EventEmitter {
     private requestId: number = 0;
     private clientDataBuffers: Map<string, string> = new Map();
     private clientInfoMap: Map<string, any> = new Map();
+
+    // Server identification for multi-instance support
+    private serverId: string = '';
 
     // UDP broadcast related fields
     private broadcastSocket: dgram.Socket | null = null;
@@ -48,10 +52,21 @@ export class UnityConnection extends EventEmitter {
      * Configures the server settings.
      * @param host The host to bind to.
      * @param port The port to bind to.
+     * @param serverId Optional server ID for multi-instance identification. Generated via crypto.randomUUID() if not provided.
      */
-    public configure(host: string, port: number): void {
+    public configure(host: string, port: number, serverId?: string): void {
         this.host = host;
         this.port = port;
+        this.serverId = serverId || crypto.randomUUID();
+        console.error(`[INFO] Server ID: ${this.serverId}`);
+    }
+
+    /**
+     * Gets the server ID for this instance.
+     * @returns The server ID string
+     */
+    public getServerId(): string {
+        return this.serverId;
     }
 
     /**

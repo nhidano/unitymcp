@@ -26,7 +26,8 @@ async function main() {
     // Configure from environment variables or defaults
     const host = process.env.MCP_HOST || '127.0.0.1';
     const port = parseInt(process.env.MCP_PORT || '27182', 10);
-    unityConnection.configure(host, port);
+    const serverId = process.env.MCP_SERVER_ID || undefined;
+    unityConnection.configure(host, port, serverId);
 
     // Create registries
     const commandRegistry = new CommandRegistry();
