@@ -363,6 +363,12 @@ export class UnityConnection extends EventEmitter {
      * Clears all connected Unity clients.
      */
     public clearClients(): void {
+        // Destroy all client sockets before clearing
+        for (const [clientId, socket] of this.clients.entries()) {
+            console.error(`[INFO] Destroying client socket: ${clientId}`);
+            socket.destroy();
+        }
+
         // Clear all client data
         this.clients.clear();
         this.clientDataBuffers.clear();
