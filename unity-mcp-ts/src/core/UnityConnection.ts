@@ -372,6 +372,12 @@ export class UnityConnection extends EventEmitter {
         // Reset active client
         this.activeClientId = null;
 
+        // Reject all pending requests
+        for (const [id, { reject }] of this.pendingRequests) {
+            reject(new Error('All clients cleared'));
+        }
+        this.pendingRequests.clear();
+
         // Clear all client data
         this.clients.clear();
         this.clientDataBuffers.clear();
