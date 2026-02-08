@@ -1,0 +1,9 @@
+﻿=== START T-01 clearClients() - ソケット適切破棄 (2026-02-08 20:01:27) ===
+
+OK
+**Summary of T-01:**
+- **Change:** Added a `for...of` loop in `clearClients()` that iterates all entries in `this.clients` and calls `socket.destroy()` on each socket before `this.clients.clear()` is called. This prevents socket resource leaks that occurred when `clearClients()` discarded socket references without properly closing them. The pattern matches the existing `stop()` method implementation (lines 487-490).
+- **File modified:** `unity-mcp-ts/src/core/UnityConnection.ts`
+
+=== END T-01 clearClients() - ソケット適切破棄 (exit: 0, 2026-02-08 20:04:09) ===
+=== START T-02 clearClients() - activeClientIdリセット (2026-02-08 20:04:09) ===

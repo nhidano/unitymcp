@@ -369,6 +369,9 @@ export class UnityConnection extends EventEmitter {
             socket.destroy();
         }
 
+        // Reset active client
+        this.activeClientId = null;
+
         // Clear all client data
         this.clients.clear();
         this.clientDataBuffers.clear();
