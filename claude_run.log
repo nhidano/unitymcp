@@ -129,3 +129,42 @@ Done. **T-12 ソケットタイムアウト設定(Send/Receive)** completed.
 
 === END T-12 ソケットタイムアウト設定(Send/Receive) (exit: 0, 2026-02-08 20:31:14) ===
 === START T-13 Play Mode変更時のStop()スレッド待機改善 (2026-02-08 20:31:14) ===
+Done. **T-13 Play Mode変更時のStop()スレッド待機改善** completed.
+
+**Changes:**
+1. **`McpServer.cs:204`** — `clientThread.Join` timeout extended from 1000ms to 3000ms, giving the background thread more time to cleanly exit
+2. **`McpEditorInitializer.cs:80`** — `server.Start()` is now deferred via `EditorApplication.delayCall`, ensuring Stop() fully completes (including thread join and UDP listener cleanup) before Start() begins. This prevents the race condition where Start() could be called while the previous thread was still shutting down
+
+=== END T-13 Play Mode変更時のStop()スレッド待機改善 (exit: 0, 2026-02-08 20:33:03) ===
+=== START T-15 ManualResetEventのusing化 (2026-02-08 20:33:03) ===
+Done. Here's what was changed:
+
+**T-15: ManualResetEventのusing化**
+
+Changed `new ManualResetEvent(false)` to `using var` in two locations in `McpServer.cs`:
+
+- **Line 775** (`ProcessResourceRequest`) — resource fetch wait handle
+- **Line 884** (`ExecuteCommand`) — command execution wait handle
+
+This ensures the `ManualResetEvent` (which wraps a native OS handle) is properly disposed when the method returns, preventing handle leaks.
+
+Commit: `51ffbfc T-15 ManualResetEventのusing化`
+
+=== END T-15 ManualResetEventのusing化 (exit: 0, 2026-02-08 20:34:59) ===
+=== START MI-01 TSサーバにserverId追加(環境変数/UUID) (2026-02-08 20:34:59) ===
+MI-01 completed and committed. Summary of changes:
+
+- Added `import * as crypto from 'crypto'`
+**`unity-mcp-ts/src/core/UnityConnection.ts`:**
+- Added `private serverId: string = ''` field for multi-instance identification
+- Updated `configure()` to accept optional `serverId` parameter — generates `crypto.randomUUID()` if not provided
+- Added `getServerId()` public getter (for use by MI-02 when adding serverId to broadcasts)
+
+**`unity-mcp-ts/src/index.ts`:**
+- Reads `MCP_SERVER_ID` environment variable
+- Passes it to `unityConnection.configure(host, port, serverId)`
+
+Note: I was unable to run `npm run build` or `npm test` due to repeated command approval blocks. The changes are minimal and type-safe (optional parameter addition, built-in Node.js `crypto` module).
+
+=== END MI-01 TSサーバにserverId追加(環境変数/UUID) (exit: 0, 2026-02-08 20:38:47) ===
+=== START MI-02 UDPブロードキャストにserverId含める (2026-02-08 20:38:47) ===
