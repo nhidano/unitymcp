@@ -26,3 +26,46 @@ OK
 
 === END T-03 clearClients() - pendingRequests全reject (exit: 0, 2026-02-08 20:08:11) ===
 === START MI-06 unity_listClients非破壊化 (2026-02-08 20:08:11) ===
+MI-06 complete. Commit `6823672` created successfully.
+
+**Summary of changes in `unity-mcp-ts/src/core/UnityClientHandler.ts`:**
+
+1. **`unity_listClients` (non-destructive)**: Removed `clearClients()`, `sendInitialBroadcast("listClients")`, and the 3-second `setTimeout`. Now simply returns the current connected clients from the in-memory map — no connections are destroyed.
+
+2. **`unity_refreshClients` (new tool)**: Added a separate tool that sends a UDP broadcast to discover Unity projects without disconnecting existing clients. It keeps all existing connections intact while allowing new clients to be discovered.
+
+Note: I was unable to run the TypeScript compiler or test runner as they required command approval that wasn't granted. The changes are minimal and syntactically correct — only removing 3 lines from the existing handler and adding a new tool registration block.
+
+=== END MI-06 unity_listClients非破壊化 (exit: 0, 2026-02-08 20:11:25) ===
+=== START T-04 bytesRead==0切断検知追加 (2026-02-08 20:11:25) ===
+Done. T-04 has been committed successfully.
+
+**Summary of changes (`McpServer.cs:553-587`):**
+
+- **Before:** `ProcessIncomingData()` only handled `bytesRead > 0` and silently ignored `bytesRead == 0`, meaning a graceful TCP disconnection from the TS server went undetected.
+- **After:** When `bytesRead == 0`, the code now:
+  1. Logs the remote disconnection
+  2. Closes and nulls the `TcpClient`
+  3. Fires the `OnDisconnected` event on the main thread
+  4. Returns immediately, allowing the `RunClient` loop to trigger reconnection on the next iteration
+
+=== END T-04 bytesRead==0切断検知追加 (exit: 0, 2026-02-08 20:12:46) ===
+=== START T-05 socket.on('end')ハンドラ追加 (2026-02-08 20:12:46) ===
+Commit successful.
+
+**Summary of T-05:**
+
+Added a `socket.on('end')` event handler in `unity-mcp-ts/src/core/UnityConnection.ts:97-101` to detect half-open TCP connections. When the Unity C# side sends a FIN packet (graceful shutdown), the `end` event fires, we log it, and call `socket.destroy()` to fully close the socket. This triggers the existing `close` handler which performs cleanup (removing from `clients`, `clientDataBuffers`, `clientInfoMap` maps and updating `activeClientId`).
+Note: Test/build commands were not approved for execution. The change is minimal and syntactically verified by reading the surrounding code.
+
+
+=== END T-05 socket.on('end')ハンドラ追加 (exit: 0, 2026-02-08 20:14:42) ===
+=== START T-06 TCP KeepAlive設定追加 (2026-02-08 20:14:42) ===
+Done. Commit `c7df35c` created successfully.
+
+**Summary of T-06:**
+
+Added `this.client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true)` in `McpServer.cs:460`, immediately after `new TcpClient()` creation in `TryConnect()`. This enables TCP KeepAlive on the socket, allowing the OS to periodically send probe packets to detect dead connections even when no application data is being exchanged.
+
+=== END T-06 TCP KeepAlive設定追加 (exit: 0, 2026-02-08 20:16:36) ===
+=== START T-07 socket.on('error')でソケット破棄+マップ削除 (2026-02-08 20:16:36) ===

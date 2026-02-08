@@ -120,10 +120,11 @@ export class UnityConnection extends EventEmitter {
                         this.emit('clientDisconnected', { clientId });
                     });
 
-                    // Handle errors
+                    // Handle errors - destroy socket to trigger 'close' event for cleanup
                     socket.on('error', (err) => {
                         console.error(`[ERROR] Socket error for client ${clientId}: ${err.message}`);
                         this.emit('clientError', { clientId, error: err });
+                        socket.destroy();
                     });
                 });
 
