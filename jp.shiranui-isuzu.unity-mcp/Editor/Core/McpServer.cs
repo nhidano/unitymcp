@@ -560,11 +560,18 @@ namespace UnityMCP.Editor.Core
 
                 // Read available data
                 var bytesRead = stream.Read(this.buffer, 0, this.buffer.Length);
-                if (bytesRead > 0)
+                if (bytesRead == 0)
                 {
-                    var data = Encoding.UTF8.GetString(this.buffer, 0, bytesRead);
-                    this.ProcessData(data);
+                    // Remote side has gracefully closed the connection
+                    Debug.Log("[McpServer] Remote host closed the connection (bytesRead == 0)");
+                    this.client?.Close();
+                    this.client = null;
+                    this.ExecuteOnMainThread(() => this.OnDisconnected(EventArgs.Empty));
+                    return;
                 }
+
+                var data = Encoding.UTF8.GetString(this.buffer, 0, bytesRead);
+                this.ProcessData(data);
             }
             catch (Exception e)
             {
