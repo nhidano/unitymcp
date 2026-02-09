@@ -97,12 +97,16 @@ export abstract class BaseResourceHandler implements IResourceHandler {
             throw new Error("Unity connection not initialized");
         }
 
+        if (!this.unityConnection.isServerListening()) {
+            throw new Error("TCP server not running. Port bind may have failed due to a port conflict with another MCP server instance.");
+        }
+
         if (!this.unityConnection.isUnityConnected()) {
             try {
                 // In server mode, we just ensure a connection is available
                 await this.unityConnection.ensureConnected();
             } catch (err) {
-                throw new Error(`Failed to connect to Unity: ${err instanceof Error ? err.message : String(err)}`);
+                throw new Error(`No Unity clients connected. Ensure Unity Editor is running with the MCP plugin enabled.`);
             }
         }
     }

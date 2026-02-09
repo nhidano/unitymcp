@@ -25,9 +25,10 @@ async function main() {
 
     // Configure from environment variables or defaults
     const host = process.env.MCP_HOST || '127.0.0.1';
+    const explicitPort = !!process.env.MCP_PORT;
     const port = parseInt(process.env.MCP_PORT || '27182', 10);
     const serverId = process.env.MCP_SERVER_ID || undefined;
-    unityConnection.configure(host, port, serverId);
+    unityConnection.configure(host, port, serverId, explicitPort);
 
     // Create registries
     const commandRegistry = new CommandRegistry();
@@ -49,11 +50,12 @@ async function main() {
     // Start the unity connection server
     try {
       await unityConnection.start();
-      console.error(`[INFO] Started MCP server on ${host}:${port}, waiting for Unity clients to connect`);
+      const actualPort = unityConnection.getPort();
+      console.error(`[INFO] Started MCP server on ${host}:${actualPort}, waiting for Unity clients to connect`);
     } catch (err) {
-      console.error(`[ERROR] Failed to start Unity connection server: ${err instanceof Error ? err.message : String(err)}`);
-      console.error('[WARN] Continuing execution, but Unity functionality may be limited');
-      // Continue execution - Unity clients will attempt to connect
+      console.error(`[FATAL] Cannot start TCP server: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('[FATAL] Exiting because TCP server is required for Unity communication.');
+      process.exit(1);
     }
 
     // Register unity client management tools

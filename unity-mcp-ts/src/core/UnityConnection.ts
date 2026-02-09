@@ -1,6 +1,9 @@
 ﻿import * as net from 'net';
 import * as dgram from 'dgram';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { EventEmitter } from 'events';
 import { JObject } from '../types/index.js';
 import { McpErrorCode } from "../types/ErrorCodes.js";
@@ -16,6 +19,7 @@ export class UnityConnection extends EventEmitter {
     private activeClientId: string | null = null;
     private port: number = 27182; // Default port
     private host: string = '127.0.0.1';
+    private explicitPort: boolean = false; // Whether port was explicitly set via MCP_PORT
     private pendingRequests: Map<string, { resolve: (value: JObject) => void, reject: (reason: Error) => void, clientId: string }> = new Map();
     private requestId: number = 0;
     private clientDataBuffers: Map<string, string> = new Map();
@@ -29,6 +33,10 @@ export class UnityConnection extends EventEmitter {
 
     // Buffer size limit (1MB) for incomplete data
     private static readonly MAX_BUFFER_SIZE = 1_048_576;
+
+    // Port range for auto-selection (used when MCP_PORT is not set)
+    private static readonly PORT_RANGE_START = 27182;
+    private static readonly PORT_RANGE_SIZE = 10;
 
     // UDP broadcast related fields
     private broadcastSocket: dgram.Socket | null = null;
@@ -60,9 +68,10 @@ export class UnityConnection extends EventEmitter {
      * @param port The port to bind to.
      * @param serverId Optional server ID for multi-instance identification. Generated via crypto.randomUUID() if not provided.
      */
-    public configure(host: string, port: number, serverId?: string): void {
+    public configure(host: string, port: number, serverId?: string, explicitPort: boolean = false): void {
         this.host = host;
         this.port = port;
+        this.explicitPort = explicitPort;
         this.serverId = serverId || crypto.randomUUID();
         console.error(`[INFO] Server ID: ${this.serverId}`);
     }
@@ -76,119 +85,202 @@ export class UnityConnection extends EventEmitter {
     }
 
     /**
+     * Gets the port the server is currently bound to.
+     * @returns The port number
+     */
+    public getPort(): number {
+        return this.port;
+    }
+
+    /**
      * Starts the server to accept Unity client connections.
      * @returns A promise that resolves when the server is started.
      */
-    public start(): Promise<void> {
-        return new Promise((resolve, reject) => {
+    public async start(): Promise<void> {
+        if (this.server) {
+            console.error('[INFO] Server is already running');
+            return;
+        }
+
+        if (this.explicitPort) {
+            // Explicit port specified via MCP_PORT: try only that port
+            await this.tryBind(this.port);
+        } else {
+            // Auto mode: try ports in range
+            await this.bindFromRange();
+        }
+
+        this.writeLockFile();
+        this.emit('serverStarted', { host: this.host, port: this.port });
+        this.sendInitialBroadcast("mcp_server_announce");
+    }
+
+    /**
+     * Tries to bind the server to ports in the range sequentially.
+     * @throws Error if no port in the range is available.
+     */
+    private async bindFromRange(): Promise<void> {
+        const rangeEnd = UnityConnection.PORT_RANGE_START + UnityConnection.PORT_RANGE_SIZE - 1;
+        for (let i = 0; i < UnityConnection.PORT_RANGE_SIZE; i++) {
+            const port = UnityConnection.PORT_RANGE_START + i;
             try {
-                if (this.server) {
-                    console.error('[INFO] Server is already running');
-                    resolve();
-                    return;
+                await this.tryBind(port);
+                return;
+            } catch (err: any) {
+                if (err.code === 'EADDRINUSE') {
+                    console.error(`[INFO] Port ${port} in use, trying next...`);
+                    continue;
                 }
-
-                this.server = net.createServer((socket) => {
-                    // New client connection
-                    const clientId = `unity-${socket.remoteAddress}:${socket.remotePort}`;
-                    console.error(`[INFO] New Unity client connected: ${clientId}`);
-
-                    // Initialize buffer for this client
-                    this.clientDataBuffers.set(clientId, '');
-
-                    // Add client to the map
-                    this.clients.set(clientId, socket);
-
-                    // Set as active client if it's the first one
-                    if (!this.activeClientId) {
-                        this.activeClientId = clientId;
-                        console.error(`[INFO] Set ${clientId} as active client`);
-                    }
-
-                    // Emit connection event
-                    this.emit('clientConnected', {
-                        clientId,
-                        host: socket.remoteAddress,
-                        port: socket.remotePort
-                    });
-
-                    // Set up data handling
-                    socket.on('data', (data) => this.handleClientData(clientId, data));
-
-                    // Handle half-open connection (remote side sent FIN)
-                    socket.on('end', () => {
-                        console.error(`[INFO] Unity client connection ended (FIN received): ${clientId}`);
-                        socket.destroy();
-                    });
-
-                    // Handle disconnection
-                    socket.on('close', () => {
-                        // Find the actual clientId for this socket (may have been renamed during registration)
-                        let actualClientId = clientId;
-                        for (const [id, s] of this.clients) {
-                            if (s === socket) {
-                                actualClientId = id;
-                                break;
-                            }
-                        }
-
-                        console.error(`[INFO] Unity client disconnected: ${actualClientId}`);
-                        this.stopHeartbeat(actualClientId);
-                        this.clients.delete(actualClientId);
-                        this.clientDataBuffers.delete(actualClientId);
-                        this.clientInfoMap.delete(actualClientId);
-
-                        // Reject pending requests for this client
-                        for (const [id, pending] of this.pendingRequests) {
-                            if (pending.clientId === actualClientId) {
-                                pending.reject(new Error(`Client disconnected: ${actualClientId}`));
-                                this.pendingRequests.delete(id);
-                            }
-                        }
-
-                        // Update active client if this was the active one
-                        if (this.activeClientId === actualClientId) {
-                            this.activeClientId = this.clients.size > 0 ?
-                                [...this.clients.keys()][0] : null;
-
-                            if (this.activeClientId) {
-                                console.error(`[INFO] New active client: ${this.activeClientId}`);
-                            }
-                        }
-
-                        this.emit('clientDisconnected', { clientId: actualClientId });
-                    });
-
-                    // Handle errors - destroy socket to trigger 'close' event for cleanup
-                    socket.on('error', (err) => {
-                        console.error(`[ERROR] Socket error for client ${clientId}: ${err.message}`);
-                        this.emit('clientError', { clientId, error: err });
-                        socket.destroy();
-                    });
-                });
-
-                // Handle server errors
-                this.server.on('error', (err) => {
-                    console.error(`[ERROR] Server error: ${err.message}`);
-                    this.emit('error', err);
-                    reject(err);
-                });
-
-                // Start listening
-                this.server.listen(this.port, this.host, () => {
-                    console.error(`[INFO] MCP server listening on ${this.host}:${this.port}`);
-                    this.emit('serverStarted', { host: this.host, port: this.port });
-
-                    // Send a single broadcast when server starts
-                    this.sendInitialBroadcast("mcp_server_announce");
-
-                    resolve();
-                });
-            } catch (err) {
-                console.error(`[ERROR] Failed to start server: ${err instanceof Error ? err.message : String(err)}`);
-                reject(err);
+                throw err;
             }
+        }
+        throw new Error(`No available port in range ${UnityConnection.PORT_RANGE_START}-${rangeEnd}`);
+    }
+
+    /**
+     * Attempts to bind the TCP server to a specific port.
+     * @param port The port number to bind to.
+     * @returns A promise that resolves when bound successfully.
+     */
+    private tryBind(port: number): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const server = net.createServer((socket) => this.handleNewClient(socket));
+
+            server.on('error', (err) => {
+                console.error(`[ERROR] Server error: ${err.message}`);
+                this.emit('error', err);
+                reject(err);
+            });
+
+            server.listen(port, this.host, () => {
+                this.server = server;
+                this.port = port;
+                console.error(`[INFO] MCP server listening on ${this.host}:${this.port}`);
+                resolve();
+            });
         });
+    }
+
+    /**
+     * Handles a new client socket connection.
+     * @param socket The client socket.
+     */
+    private handleNewClient(socket: net.Socket): void {
+        const clientId = `unity-${socket.remoteAddress}:${socket.remotePort}`;
+        console.error(`[INFO] New Unity client connected: ${clientId}`);
+
+        // Initialize buffer for this client
+        this.clientDataBuffers.set(clientId, '');
+
+        // Add client to the map
+        this.clients.set(clientId, socket);
+
+        // Set as active client if it's the first one
+        if (!this.activeClientId) {
+            this.activeClientId = clientId;
+            console.error(`[INFO] Set ${clientId} as active client`);
+        }
+
+        // Emit connection event
+        this.emit('clientConnected', {
+            clientId,
+            host: socket.remoteAddress,
+            port: socket.remotePort
+        });
+
+        // Set up data handling
+        socket.on('data', (data) => this.handleClientData(clientId, data));
+
+        // Handle half-open connection (remote side sent FIN)
+        socket.on('end', () => {
+            console.error(`[INFO] Unity client connection ended (FIN received): ${clientId}`);
+            socket.destroy();
+        });
+
+        // Handle disconnection
+        socket.on('close', () => {
+            // Find the actual clientId for this socket (may have been renamed during registration)
+            let actualClientId = clientId;
+            for (const [id, s] of this.clients) {
+                if (s === socket) {
+                    actualClientId = id;
+                    break;
+                }
+            }
+
+            console.error(`[INFO] Unity client disconnected: ${actualClientId}`);
+            this.stopHeartbeat(actualClientId);
+            this.clients.delete(actualClientId);
+            this.clientDataBuffers.delete(actualClientId);
+            this.clientInfoMap.delete(actualClientId);
+
+            // Reject pending requests for this client
+            for (const [id, pending] of this.pendingRequests) {
+                if (pending.clientId === actualClientId) {
+                    pending.reject(new Error(`Client disconnected: ${actualClientId}`));
+                    this.pendingRequests.delete(id);
+                }
+            }
+
+            // Update active client if this was the active one
+            if (this.activeClientId === actualClientId) {
+                this.activeClientId = this.clients.size > 0 ?
+                    [...this.clients.keys()][0] : null;
+
+                if (this.activeClientId) {
+                    console.error(`[INFO] New active client: ${this.activeClientId}`);
+                }
+            }
+
+            this.emit('clientDisconnected', { clientId: actualClientId });
+        });
+
+        // Handle errors - destroy socket to trigger 'close' event for cleanup
+        socket.on('error', (err) => {
+            console.error(`[ERROR] Socket error for client ${clientId}: ${err.message}`);
+            this.emit('clientError', { clientId, error: err });
+            socket.destroy();
+        });
+    }
+
+    /**
+     * Gets the path to this server's lock file.
+     */
+    private lockFilePath(): string {
+        const dir = path.join(os.tmpdir(), 'unity-mcp', 'servers');
+        fs.mkdirSync(dir, { recursive: true });
+        return path.join(dir, `${this.serverId}.json`);
+    }
+
+    /**
+     * Writes a lock file with the server's connection info.
+     */
+    private writeLockFile(): void {
+        try {
+            const data = {
+                serverId: this.serverId,
+                host: this.host,
+                port: this.port,
+                pid: process.pid,
+                startedAt: new Date().toISOString(),
+            };
+            fs.writeFileSync(this.lockFilePath(), JSON.stringify(data, null, 2));
+            console.error(`[INFO] Lock file written: ${this.lockFilePath()}`);
+        } catch (err) {
+            console.error(`[WARN] Failed to write lock file: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
+    /**
+     * Removes this server's lock file.
+     */
+    private removeLockFile(): void {
+        try {
+            fs.unlinkSync(this.lockFilePath());
+            console.error(`[INFO] Lock file removed: ${this.lockFilePath()}`);
+        } catch {
+            // Ignore errors (file may not exist)
+        }
     }
 
     /**
@@ -607,9 +699,13 @@ export class UnityConnection extends EventEmitter {
     }
 
     /**
-     * Checks if connected to any Unity client.
-     * @returns True if connected, false otherwise
+     * Checks if the TCP server is currently listening.
+     * @returns True if the server is bound and listening
      */
+    public isServerListening(): boolean {
+        return this.server?.listening === true;
+    }
+
     public isUnityConnected(): boolean {
         return this.hasConnectedClients();
     }
@@ -632,6 +728,9 @@ export class UnityConnection extends EventEmitter {
      * Stops the server and closes all connections.
      */
     public stop(): void {
+        // Remove lock file
+        this.removeLockFile();
+
         // Stop all heartbeats
         this.stopAllHeartbeats();
 
