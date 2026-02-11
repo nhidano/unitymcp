@@ -688,7 +688,7 @@ export class UnityConnection extends EventEmitter {
                     if (this.pendingRequests.has(id)) {
                         console.error(`[ERROR] Request with ID ${id} timed out`);
                         this.pendingRequests.delete(id);
-                        reject(new Error('Request timed out'));
+                        reject(new Error('Request timed out. Unity Editor may not be responding because it is running in the background. Ask the user to bring the Unity Editor window to the foreground and retry.'));
                     }
                 }, 30000); // 30 seconds timeout
             } catch (err) {

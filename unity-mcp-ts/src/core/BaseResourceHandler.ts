@@ -106,7 +106,7 @@ export abstract class BaseResourceHandler implements IResourceHandler {
                 // In server mode, we just ensure a connection is available
                 await this.unityConnection.ensureConnected();
             } catch (err) {
-                throw new Error(`No Unity clients connected. Ensure Unity Editor is running with the MCP plugin enabled.`);
+                throw new Error(`No Unity clients connected. Ensure Unity Editor is running with the MCP plugin enabled.\n[Troubleshooting] Unity Editor may not respond while running in the background. Ask the user to bring the Unity Editor window to the foreground (click or Alt+Tab to it), then retry.`);
             }
         }
     }
